@@ -1,6 +1,6 @@
 FROM ghcr.io/ghcri/alpine:3.15
 ARG TARGETARCH
-LABEL org.opencontainers.image.source https://github.com/go-shiori/shiori
+# LABEL org.opencontainers.image.source https://github.com/go-shiori/shiori
 COPY etc /etc
 COPY binaries/shiori_linux_$TARGETARCH/shiori /usr/bin/shiori
 USER shiori
