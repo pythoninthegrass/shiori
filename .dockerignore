@@ -1,5 +1,6 @@
 docs
-Dockerfile
+docker-compose.yaml
+Dockerfile.*
 *.md
 .githooks
 .github
