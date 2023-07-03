@@ -8,6 +8,8 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+  <link rel="manifest" type="application/json" href="res/manifest.json">
+
 	<link rel="apple-touch-icon-precomposed" sizes="152x152" href="res/apple-touch-icon-152x152.png">
 	<link rel="apple-touch-icon-precomposed" sizes="144x144" href="res/apple-touch-icon-144x144.png">
 	<link rel="icon" type="image/png" href="res/favicon-32x32.png" sizes="32x32">
@@ -88,6 +90,14 @@
 			}
 		});
 	</script>
+  <!-- Register the service worker -->
+  <script type="module">
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('js/service-worker.js');
+      });
+    }
+  </script>
 </body>
 
 </html>

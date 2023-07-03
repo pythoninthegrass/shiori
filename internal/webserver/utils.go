@@ -23,6 +23,7 @@ var (
 		".html": "text/html; charset=utf-8",
 		".js":   "application/javascript",
 		".png":  "image/png",
+		".json": "application/json",
 	}
 )
 
