@@ -25,6 +25,8 @@ builds:
         goarch: arm
       - goos: windows
         goarch: arm64
+# ! archives is a pro feature
+# https://goreleaser.com/customization/archive/?h=archive
 archives:
   - id: shiori
     name_template: >-
@@ -32,32 +34,35 @@ archives:
       {{- if eq .Os "darwin" }}Darwin{{- else if eq .Os "linux" }}Linux{{- else if eq .Os "windows" }}Windows{{- else }}{{ .Os }}{{ end }}_
       {{- if eq .Arch "amd64" }}x86_64{{- else if eq .Arch "arm64" }}aarch64{{- else }}{{ .Arch }}{{ end }}
 
-env:
-  - USER=$(git config --local --get remote.origin.url | awk -F/ '{print $4}')
-
 dockers:
-  dockerfile: ./.github/workflows/docker/Dockerfile.ci
-  skip_push: false
-  id: shiori-ghcr
-  goos: linux
-  goarch: amd64
-  goarm: 7
-  goamd64: v2
-  ids:
-    - mybuild
-  image_templates:
-    - "{{ .Env.USER }}/{{ .ProjectName }}:latest"
-    - "{{ .Env.USER }}/{{ .ProjectName }}:{{ .Tag }}"
-    - "{{ .Env.USER }}/{{ .ProjectName }}:v{{ .Major }}.{{ .Minor }}.{{ .Patch }}
-    - "ghcr.io/{{ .Env.USER }}/{{ .ProjectName }}:latest"
-  build_flag_templates:
-    - "--pull"
-    - "--label=org.opencontainers.image.created={{.Date}}"
-    - "--label=org.opencontainers.image.title={{.ProjectName}}"
-    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-    - "--label=org.opencontainers.image.version={{.Version}}"
-    - "--label=org.opencontainers.image.source={{.RepoURL}}"
-    - "--label=org.opencontainers.image.licenses=MIT"
+  - id: shiori-ghcr
+    dockerfile: "{{ .Env.DOCKERFILE }}"
+    skip_push: false
+    goos: linux
+    goarch: amd64
+    goarm: 7
+    goamd64: v2
+    image_templates:
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:latest"
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Tag }}"
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:v{{ .Major }}.{{ .Minor }}.{{ .Patch }}"
+    build_flag_templates:
+      - "--pull"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.source={{ .Env.GIT_REPO }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+      - "--builder=orbstack"
+      # - "--builder=docker"
+    use: buildx
+    extra_files:
+      - ./
+      # - main.go
+      # - go.mod
+      # - go.sum
+      # - internal/
 
 checksum:
   name_template: 'checksums.txt'
