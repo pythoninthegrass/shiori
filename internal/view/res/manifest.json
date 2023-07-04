@@ -1,21 +1,21 @@
 {
-"name": "Shiori",
-"short_name": "Shiori",
-"start_url": "/",
-"display": "standalone",
-"description": "Shiori is a simple bookmarks manager written in the Go language. Intended as a simple clone of Pocket. You can use it as a command line application or as a web application. This application is distributed as a single binary, which means it can be installed and used easily.",
-"lang": "English",
-"dir": "auto",
-"theme_color": "#000000",
-"background_color": "#000000",
-"orientation": "any",
-"share_target": {
-  "action": "/share-target/",
-  "method": "GET",
-  "params": {
-    "title": "title",
-    "text": "text",
-    "url": "url"
+  "name": "Shiori",
+  "short_name": "Shiori",
+  "start_url": "/",
+  "display": "standalone",
+  "description": "Shiori is a simple bookmarks manager written in the Go language. Intended as a simple clone of Pocket. You can use it as a command line application or as a web application. This application is distributed as a single binary, which means it can be installed and used easily.",
+  "lang": "en",
+  "dir": "auto",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "orientation": "any",
+  "share_target": {
+    "action": "/share-target/",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
     }
   },
   "categories": [
@@ -31,6 +31,11 @@
       "src": "/res/apple-touch-icon-152x152.png",
       "type": "image/png",
       "sizes": "152x152"
+    },
+    {
+      "src": "/res/icon-white-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512"
     }
   ],
   "screenshots": [
@@ -79,5 +84,10 @@
       "url": "https://shiori.io/#setting",
       "description": "Settings"
     }
+  ],
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "browser"
   ]
 }
