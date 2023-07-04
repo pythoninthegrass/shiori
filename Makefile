@@ -11,7 +11,7 @@ export TLD						:= $(shell git rev-parse --show-toplevel)
 export DOCKERFILE				:= $(TLD)/Dockerfile
 export DOCKER_BUILDKIT			:= 0
 export COMPOSE_DOCKER_CLI_BUILD	:= 0
-export DOCKER_DEFAULT_PLATFORM	:= linux/amd64
+# export DOCKER_DEFAULT_PLATFORM	:= linux/amd64
 export GIT_TAG 					?= $(shell git describe --tags --abbrev=0 --exact-match 2>/dev/null)
 export GIT_USER 				:= $(shell git config --get remote.origin.url | awk -F/ '{print $$4}')
 export GIT_REPO 				:= $(shell git config --get remote.origin.url | awk -F/ '{print $$NF}' | sed 's/.git//')
@@ -132,7 +132,7 @@ release-qa:	validate ## release to qa
 	@echo "Releasing to qa..."
 	export GITHUB_TOKEN=$(GITHUB_TOKEN) && \
 	export DOCKER_REG=$(DOCKER_REG) && \
-	LDFLAGS=$(LDFLAGS) goreleaser release --snapshot --clean
+	LDFLAGS=$(LDFLAGS) goreleaser release --snapshot --verbose --clean
 
 # TODO: test upload to dockerhub
 release: validate tag-semver ghcr-login ## release to prod
@@ -141,7 +141,6 @@ release: validate tag-semver ghcr-login ## release to prod
 	export DOCKER_REG=$(DOCKER_REG) && \
 	export DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) && \
 	export COMPOSE_DOCKER_CLI_BUILD=$(COMPOSE_DOCKER_CLI_BUILD) && \
-	export DOCKER_DEFAULT_PLATFORM=$(DOCKER_DEFAULT_PLATFORM) && \
 	LDFLAGS=$(LDFLAGS) goreleaser release --clean
 
 help: ## show this help

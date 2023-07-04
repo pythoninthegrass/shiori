@@ -37,34 +37,52 @@ archives:
       {{- if eq .Arch "amd64" }}x86_64{{- else if eq .Arch "arm64" }}aarch64{{- else }}{{ .Arch }}{{ end }}
 
 dockers:
-  - id: shiori-ghcr
+  # https://goreleaser.com/customization/docker/
+  - use: buildx
     dockerfile: "{{ .Env.DOCKERFILE }}"
-    skip_push: false
     goos: linux
     goarch: amd64
-    goarm: 7
-    goamd64: v2
+    skip_push: false
     image_templates:
-      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:latest"
-      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Tag }}"
-      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:v{{ .Major }}.{{ .Minor }}.{{ .Patch }}"
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:latest-amd64"
     build_flag_templates:
-      - "--pull"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.source={{ .Env.GIT_REPO }}"
-      - "--label=org.opencontainers.image.licenses=MIT"
+      - "--platform=linux/amd64"
       - "--builder=orbstack"
-      # - "--builder=docker"
-    use: buildx
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
     extra_files:
       - ./
-      # - main.go
-      # - go.mod
-      # - go.sum
-      # - internal/
+
+  - use: buildx
+    dockerfile: "{{ .Env.DOCKERFILE }}"
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}-arm64v8"
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:latest-arm64v8"
+    build_flag_templates:
+      - "--platform=linux/arm64/v8"
+      - "--builder=orbstack"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    extra_files:
+      - ./
+
+docker_manifests:
+  # https://goreleaser.com/customization/docker_manifest/
+  - name_template: "{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}"
+    image_templates:
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}-amd64"
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}-arm64v8"
+  - name_template: "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:latest"
+    image_templates:
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:latest-amd64"
+      - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:latest-arm64v8"
 
 checksum:
   name_template: 'checksums.txt'
