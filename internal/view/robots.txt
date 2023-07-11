@@ -1,0 +1,9 @@
+# https://developers.google.com/search/docs/crawling-indexing/robots/create-robots-txt
+
+# User-agent: *     # AdsBot-Google/bingbot/Googlebot
+# Allow: /
+
+User-agent: *
+Disallow: res/manifest.webmanifest
+
+# Sitemap: https://example.com/sitemap.xml
