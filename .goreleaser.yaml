@@ -75,7 +75,7 @@ dockers:
 
 docker_manifests:
   # https://goreleaser.com/customization/docker_manifest/
-  - name_template: "{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}"
+  - name_template: "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}"
     image_templates:
       - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}-amd64"
       - "{{ .Env.DOCKER_REG }}/{{ .Env.GIT_USER }}/{{ .ProjectName }}:{{ .Version }}-arm64v8"
