@@ -141,7 +141,7 @@ release: validate tag-semver ghcr-login ## release to prod
 	export DOCKER_REG=$(DOCKER_REG) && \
 	export DOCKER_BUILDKIT=$(DOCKER_BUILDKIT) && \
 	export COMPOSE_DOCKER_CLI_BUILD=$(COMPOSE_DOCKER_CLI_BUILD) && \
-	LDFLAGS=$(LDFLAGS) goreleaser release --clean
+	LDFLAGS=$(LDFLAGS) goreleaser release --verbose --clean
 
 help: ## show this help
 	@echo ''
