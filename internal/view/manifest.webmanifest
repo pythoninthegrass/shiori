@@ -57,7 +57,7 @@
       "src": "/res/apple-touch-icon-512x512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any"
+      "purpose": "any maskable"
     }
   ],
   "screenshots": [
