@@ -182,7 +182,7 @@
       }
     })
   </script>
-  <!-- Register the service worker -->
+  <!-- Register the service worker and background sync -->
   <script type="module">
     window.addEventListener('load', () => {
       // Is service worker available?
@@ -194,11 +194,6 @@
           console.warn(error);
         });
       }
-    });
-  </script>
-  <!-- Request periodic background sync -->
-  <script type="module">
-    window.addEventListener('load', () => {
       // Is background sync available?
       if ('serviceWorker' in navigator && 'SyncManager' in window) {
         navigator.serviceWorker.ready.then((registration) => {

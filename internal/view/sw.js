@@ -22,16 +22,13 @@ if (workbox.navigationPreload.isSupported()) {
 }
 
 async function registerPeriodicBackgroundSync() {
-  if (!('periodicSync' in self.registration)) {
-    return;
-  } else {
-    try {
-      await self.registration.periodicSync.register('sync-bookmarks', {
-        minInterval: 60 * 60 * 1000, // 1 hour
-      });
-    } catch (error) {
-      console.error('Periodic background sync could not be registered!');
-    }
+  const registration = await self.registration;
+  try {
+    await registration.periodicSync.register('sync-bookmarks', {
+      minInterval: 60 * 60 * 1000, // 1 hour
+    });
+  } catch (error) {
+    console.error('Periodic background sync could not be registered!');
   }
 };
 
