@@ -4,6 +4,6 @@
 # Allow: /
 
 User-agent: *
-Disallow: /manifest.webmanifest
+Disallow: /res/manifest.webmanifest
 
 # Sitemap: https://example.com/sitemap.xml
