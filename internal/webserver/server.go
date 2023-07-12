@@ -179,6 +179,14 @@ func ServeApp(cfg Config) error {
 	router.GET(jp("/css/*filepath"), withLogging(hdl.serveFile))
 	router.GET(jp("/fonts/*filepath"), withLogging(hdl.serveFile))
 
+	// PWA
+	// manifest.webmanifest (manifest.json)
+	router.GET(jp("/manifest.webmanifest"), withLogging(hdl.serveFile))
+	// service worker
+	router.GET(jp("/sw.js"), withLogging(hdl.serveFile))
+	// robots.txt
+	router.GET(jp("/robots.txt"), withLogging(hdl.serveFile))
+
 	router.GET(cfg.RootPath, withLogging(hdl.serveIndexPage))
 	router.GET(jp("/login"), withLogging(hdl.serveLoginPage))
 	router.GET(jp("/bookmark/:id/thumb"), withLogging(hdl.serveThumbnailImage))
