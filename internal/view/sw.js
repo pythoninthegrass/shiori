@@ -17,6 +17,10 @@ self.addEventListener("message", (event) => {
   }
 });
 
+if (workbox.navigationPreload.isSupported()) {
+  workbox.navigationPreload.enable();
+}
+
 workbox.routing.registerRoute(
   ({ url, request, event }) => url.pathname === '/api/bookmarks',
   new workbox.strategies.NetworkFirst({
@@ -47,12 +51,14 @@ workbox.routing.registerRoute(
     cacheName: HTML_CACHE,
     plugins: [
       new workbox.expiration.ExpirationPlugin({
-        maxEntries: 10,
+        maxEntries: 50,
       }),
+      new workbox.backgroundSync.BackgroundSyncPlugin('bookmarkQueue', {
+        maxRetentionTime: 24 * 60 // Retry for max of 24 hours
+      })
     ],
   })
 );
-
 
 workbox.routing.registerRoute(
   ({ event }) => event.request.destination === 'script',
