@@ -21,6 +21,20 @@ if (workbox.navigationPreload.isSupported()) {
   workbox.navigationPreload.enable();
 }
 
+async function registerPeriodicBackgroundSync() {
+  if (!('periodicSync' in self.registration)) {
+    return;
+  } else {
+    try {
+      await self.registration.periodicSync.register('sync-bookmarks', {
+        minInterval: 60 * 60 * 1000, // 1 hour
+      });
+    } catch (error) {
+      console.error('Periodic background sync could not be registered!');
+    }
+  }
+};
+
 workbox.routing.registerRoute(
   ({ url, request, event }) => url.pathname === '/api/bookmarks',
   new workbox.strategies.NetworkFirst({

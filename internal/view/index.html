@@ -196,6 +196,25 @@
       }
     });
   </script>
+  <!-- Request periodic background sync -->
+  <script type="module">
+    window.addEventListener('load', () => {
+      // Is background sync available?
+      if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        navigator.serviceWorker.ready.then((registration) => {
+          // Register a periodic background sync
+          registration.periodicSync.register('sync-bookmarks', {
+            minInterval: 60 * 60 * 1000, // 1 hour
+          }).then(() => {
+            console.log('Periodic background sync registered!');
+          }).catch((error) => {
+            console.warn('Error registering periodic background sync:');
+            console.warn(error);
+          });
+        });
+      }
+    });
+  </script>
 </body>
 
 </html>
