@@ -1,5 +1,5 @@
 # build stage
-FROM docker.io/golang:1.19-alpine3.18 AS builder
+FROM docker.io/golang:1.20-alpine3.18 AS builder
 WORKDIR /src
 COPY . .
 RUN go build -ldflags '-s -w'
