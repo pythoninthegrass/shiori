@@ -44,18 +44,18 @@
   ],
   "icons": [
     {
-      "src": "/res/apple-touch-icon-144x144.png",
+      "src": "/assets/res/apple-touch-icon-144x144.png",
       "type": "image/png",
       "sizes": "144x144"
     },
     {
-      "src": "/res/apple-touch-icon-152x152.png",
+      "src": "/assets/res/apple-touch-icon-152x152.png",
       "type": "image/png",
       "sizes": "152x152",
       "purpose": "maskable"
     },
     {
-      "src": "/res/apple-touch-icon-512x512.png",
+      "src": "/assets/res/apple-touch-icon-512x512.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "any"
@@ -63,22 +63,22 @@
   ],
   "screenshots": [
     {
-      "src": "/res/09-mobile-login-1440x2960.png",
+      "src": "/assets/res/09-mobile-login-1440x2960.png",
       "sizes": "1440x2960",
       "type": "image/png"
     },
     {
-      "src": "/res/10-mobile-home-1440x2960.png",
+      "src": "/assets/res/10-mobile-home-1440x2960.png",
       "sizes": "1440x2960",
       "type": "image/png"
     },
     {
-      "src": "/res/11-mobile-home-list-1440x2960.png",
+      "src": "/assets/res/11-mobile-home-list-1440x2960.png",
       "sizes": "1440x2960",
       "type": "image/png"
     },
     {
-      "src": "/res/12-mobile-options-1440x2960.png",
+      "src": "/assets/res/12-mobile-options-1440x2960.png",
       "sizes": "1440x2960",
       "type": "image/png"
     }
