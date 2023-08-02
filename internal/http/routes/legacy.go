@@ -89,14 +89,6 @@ func (r *LegacyAPIRoutes) Setup(g *gin.Engine) {
 	legacyGroup.GET("/bookmark/:id/archive/*filepath", r.handle(r.legacyHandler.ServeBookmarkArchive))
 	// legacyGroup.GET("/bookmark/:id/archive/", r.handle(r.legacyHandler.ServeBookmarkArchive))
 
-	// PWA
-	// manifest.webmanifest (manifest.json)
-	router.GET(jp("/manifest.webmanifest"), withLogging(hdl.serveFile))
-	// service worker
-	router.GET(jp("/sw.js"), withLogging(hdl.serveFile))
-	// robots.txt
-	router.GET(jp("/robots.txt"), withLogging(hdl.serveFile))
-
 	// router.GET(jp("/api/tags"), withLogging(hdl.apiGetTags))
 	legacyGroup.GET("/api/tags", r.handle(r.legacyHandler.ApiGetTags))
 	// router.PUT(jp("/api/tag"), withLogging(hdl.apiRenameTag))

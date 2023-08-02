@@ -47,6 +47,41 @@ func (s *HttpServer) Setup(cfg *config.Config, deps *config.Dependencies) *HttpS
 		routes.NewFrontendRoutes(s.logger, cfg).Setup(s.engine)
 	}
 
+	// TODO: potentially remove
+	// * embed.go
+	// * frontend.go
+	// * login.html
+	// * index.html
+	// * content.html
+	// PWA
+	// manifest.webmanifest (manifest.json)
+	// router.GET(jp("/manifest.webmanifest"), withLogging(hdl.serveFile))
+	// legacyGroup.GET("/manifest.webmanifest", r.handle(r.legacyHandler.ServeFile))
+	// service worker
+	// router.GET(jp("/sw.js"), withLogging(hdl.serveFile))
+	// legacyGroup.GET("/sw.js", r.handle(r.legacyHandler.ServeFile))
+	// robots.txt
+	// router.GET(jp("/robots.txt"), withLogging(hdl.serveFile))
+	// legacyGroup.GET("/robots.txt", r.handle(r.legacyHandler.ServeFile))
+	// func pwa() {
+	// 	router := gin.Default()
+
+	// 	// Serve manifest.webmanifest
+	// 	router.StaticFile("/manifest.webmanifest", "./manifest.webmanifest")
+
+	// 	// Serve sw.js
+	// 	router.StaticFile("/sw.js", "./sw.js")
+
+	// 	// Serve robots.txt
+	// 	router.StaticFile("/robots.txt", "./robots.txt")
+	// }
+
+	// ! Uncomment lines 81 - 83 to continue debugging
+	// // use routes to add static files (sw.js, manifest.webmanifest, robots.txt
+	// s.engine.StaticFile("manifest.webmanifest", "./manifest.webmanifest")
+	// s.engine.StaticFile("sw.js", "./sw.js")
+	// s.engine.StaticFile("robots.txt", "./robots.txt")
+
 	// LegacyRoutes will be here until we migrate everything from internal/webserver to this new
 	// package.
 	legacyRoutes := routes.NewLegacyAPIRoutes(s.logger, deps, cfg)

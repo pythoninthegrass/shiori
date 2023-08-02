@@ -2,18 +2,18 @@
 <html lang="en">
 
 <head>
-	<base href="$$.RootPath$$">
-	<title>Login - Shiori</title>
+  <base href="$$.RootPath$$">
+  <title>Login - Shiori</title>
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!--
-    manifest.webmanifest provides metadata used when your web app is installed on a
-    user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-  -->
+      manifest.webmanifest provides metadata used when your web app is installed on a
+      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+    -->
   <link rel="manifest" type="application/json" href="/manifest.webmanifest">
-  <meta name="theme-color" content="#292929"/>
+  <meta name="theme-color" content="#292929" />
   <meta
   name="description"
   content="Shiori is a simple bookmarks manager written in the Go language. Intended as a simple clone of Pocket."
@@ -25,12 +25,13 @@
   <link rel="icon" type="image/png" href="assets/res/favicon-16x16.png" sizes="16x16">
   <link rel="icon" type="image/x-icon" href="assets/res/favicon.ico">
 
-  <link href="css/source-sans-pro.min.css" rel="stylesheet">
-  <link href="css/fontawesome.min.css" rel="stylesheet">
-  <link href="css/stylesheet.css" rel="stylesheet">
+  <link href="assets/css/source-sans-pro.min.css" rel="stylesheet">
+  <!-- TODO: async/defer fontawesome -->
+  <link href="assets/css/fontawesome.min.css" rel="stylesheet">
+  <link href="assets/css/stylesheet.css" rel="stylesheet">
 
-  <script src="js/vue.min.js"></script>
-  <script src="js/url.min.js"></script>
+  <script defer src="assets/js/vue.min.js"></script>
+  <script src="assets/js/url.min.js"></script>
 </head>
 
 <body>
@@ -48,10 +49,9 @@
           <label for="username">Username: </label>
           <input id="username" type="text" name="username" placeholder="Username" tabindex="1" autofocus />
           <label for="password">Password: </label>
-          <input id="password" type="password" name="password" placeholder="Password" tabindex="2"
-            @keyup.enter="login">
-          <label class="checkbox-field"><input type="checkbox" name="remember" v-model="remember"
-              tabindex="3">Remember me</label>
+          <input id="password" type="password" name="password" placeholder="Password" tabindex="2" @keyup.enter="login">
+          <label class="checkbox-field"><input type="checkbox" name="remember" v-model="remember" tabindex="3">Remember
+            me</label>
         </div>
         <div id="button-area">
           <a v-if="loading">
@@ -60,6 +60,9 @@
           <a v-else class="button" tabindex="4" @click="login" @keyup.enter="login">Log In</a>
         </div>
       </form>
+    </div>
+    <div>
+      <p>$$.Version$$</p>
     </div>
   </div>
 
@@ -81,12 +84,26 @@
               return err.message;
             case Response:
               var text = await err.text();
+
+              // Handle new error messages
+              if (text[0] == "{") {
+                var json = JSON.parse(text);
+                return json.message;
+              }
               return `${text} (${err.status})`;
             default:
               return err;
           }
         },
         login() {
+          function parseJWT(token) {
+            try {
+              return JSON.parse(atob(token.split('.')[1]));
+            } catch (e) {
+              return null;
+            }
+          }
+
           // needed to work around autofill issue
           // https://github.com/facebook/react/issues/1159#issuecomment-506584346
           this.username = document.querySelector('#username').value;
@@ -103,12 +120,12 @@
           // Send request
           this.loading = true;
 
-          fetch(new URL("api/login", document.baseURI), {
+          fetch(new URL("api/v1/auth/login", document.baseURI), {
             method: "post",
             body: JSON.stringify({
               username: this.username,
               password: this.password,
-              remember: this.remember == 1 ? true : false,
+              remember_me: this.remember == 1 ? true : false,
             }),
             headers: { "Content-Type": "application/json" },
           }).then(response => {
@@ -116,13 +133,14 @@
             return response.json();
           }).then(json => {
             // Save session id
-            document.cookie = `session-id=${json.session}; Path=${new URL(document.baseURI).pathname}; Expires=${json.expires}`;
+            document.cookie = `session-id=${json.message.session}; Path=${new URL(document.baseURI).pathname}; Expires=${json.message.expires}`;
 
             // Save account data
-            localStorage.setItem("shiori-account", JSON.stringify(json.account));
+            localStorage.setItem("shiori-token", JSON.stringify(json.message.token));
+            localStorage.setItem("shiori-account", JSON.stringify(parseJWT(json.message.token).account));
 
             // Go to destination page
-            var currentUrl = new Url,
+            var currentUrl = new Url(),
               dstUrl = currentUrl.query.dst,
               dstPage = currentUrl.hash || "home";
 
@@ -130,8 +148,10 @@
               dstPage = "";
             }
 
+            // TODO: Improve this redirect logic
             var newUrl = new Url(dstUrl || document.baseURI);
             newUrl.hash = dstPage;
+
             location.href = newUrl;
           }).catch(err => {
             this.loading = false;
@@ -151,13 +171,14 @@
         // Load setting
         this.loadSetting();
         localStorage.removeItem("shiori-account");
+        localStorage.removeItem("shiori-token");
 
         // <input autofocus> wasn't working all the time, so I'm putting this here as a fallback
         document.querySelector('#username').focus()
       }
     })
   </script>
-   <!-- Register the service worker and background sync -->
+  <!-- Register the service worker and background sync -->
   <script type="module">
     window.addEventListener('load', () => {
       // Is service worker available?

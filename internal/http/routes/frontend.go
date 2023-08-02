@@ -76,6 +76,9 @@ func (r *FrontendRoutes) Setup(e *gin.Engine) {
 		})
 	})
 	e.StaticFS("/assets", newAssetsFS(r.logger, views.Assets))
+	e.StaticFile("manifest.webmanifest", views.Manifest)
+	e.StaticFile("sw.js", views.ServiceWorker)
+	e.StaticFile("robots.txt", views.Robots)
 }
 
 func NewFrontendRoutes(logger *logrus.Logger, cfg *config.Config) *FrontendRoutes {
