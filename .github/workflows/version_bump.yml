@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@24cb9080177205b6e8c946b17badbe402adc938f # v3.4.0
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
           ref: ${{ inputs.ref }}
@@ -36,3 +36,12 @@ jobs:
   call-buildx:
     needs: call-gorelease
     uses: ./.github/workflows/_buildx.yml
+  call-buildx-alpine:
+    needs: call-gorelease
+    uses: ./.github/workflows/_buildx.yml
+    with:
+      tag_prefix: alpine-
+      dockerfile: Dockerfile.alpine
+  call-mkdocs-publish:
+    needs: [call-buildx, call-buildx-alpine]
+    uses: ./.github/workflows/_mkdocs-publish.yml

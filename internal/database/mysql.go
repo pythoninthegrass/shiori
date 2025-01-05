@@ -3,17 +3,71 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-shiori/shiori/internal/model"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/mysql"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
+
+	_ "github.com/go-sql-driver/mysql"
 )
+
+var mysqlMigrations = []migration{
+	newFileMigration("0.0.0", "0.1.0", "mysql/0000_system_create"),
+	newFileMigration("0.1.0", "0.2.0", "mysql/0000_system_insert"),
+	newFileMigration("0.2.0", "0.3.0", "mysql/0001_initial_account"),
+	newFileMigration("0.3.0", "0.4.0", "mysql/0002_initial_bookmark"),
+	newFileMigration("0.4.0", "0.5.0", "mysql/0003_initial_tag"),
+	newFileMigration("0.5.0", "0.6.0", "mysql/0004_initial_bookmark_tag"),
+	newFuncMigration("0.6.0", "0.7.0", func(db *sql.DB) error {
+		// Ensure that bookmark table has `has_content` column and account table has `config` column
+		// for users upgrading from <1.5.4 directly into this version.
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
+		_, err = tx.Exec(`ALTER TABLE bookmark ADD COLUMN has_content BOOLEAN DEFAULT 0`)
+		if err != nil && strings.Contains(err.Error(), `Duplicate column name`) {
+			tx.Rollback()
+		} else if err != nil {
+			return fmt.Errorf("failed to add has_content column to bookmark table: %w", err)
+		} else if err == nil {
+			if errCommit := tx.Commit(); errCommit != nil {
+				return fmt.Errorf("failed to commit transaction: %w", errCommit)
+			}
+		}
+
+		tx, err = db.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
+		_, err = tx.Exec(`ALTER TABLE account ADD COLUMN config JSON  NOT NULL DEFAULT ('{}')`)
+		if err != nil && strings.Contains(err.Error(), `Duplicate column name`) {
+			tx.Rollback()
+		} else if err != nil {
+			return fmt.Errorf("failed to add config column to account table: %w", err)
+		} else if err == nil {
+			if errCommit := tx.Commit(); errCommit != nil {
+				return fmt.Errorf("failed to commit transaction: %w", errCommit)
+			}
+		}
+
+		return nil
+	}),
+	newFileMigration("0.7.0", "0.8.0", "mysql/0005_rename_to_created_at"),
+	newFileMigration("0.8.0", "0.8.1", "mysql/0006_change_created_at_settings"),
+	newFileMigration("0.8.1", "0.8.2", "mysql/0007_add_modified_at"),
+	newFileMigration("0.8.2", "0.8.3", "mysql/0008_set_modified_at_equal_created_at"),
+	newFileMigration("0.8.3", "0.8.4", "mysql/0009_index_for_created_at"),
+	newFileMigration("0.8.4", "0.8.5", "mysql/0010_index_for_modified_at"),
+}
 
 // MySQLDatabase is implementation of Database interface
 // for connecting to MySQL or MariaDB database.
@@ -32,49 +86,64 @@ func OpenMySQLDatabase(ctx context.Context, connString string) (mysqlDB *MySQLDa
 	db.SetMaxOpenConns(100)
 	db.SetConnMaxLifetime(time.Second) // in case mysql client has longer timeout (driver issue #674)
 
-	mysqlDB = &MySQLDatabase{dbbase: dbbase{*db}}
+	mysqlDB = &MySQLDatabase{dbbase: dbbase{db}}
 	return mysqlDB, err
 }
 
+// DBX returns the underlying sqlx.DB object
+func (db *MySQLDatabase) DBx() *sqlx.DB {
+	return db.DB
+}
+
+// Init initializes the database
+func (db *MySQLDatabase) Init(ctx context.Context) error {
+	return nil
+}
+
 // Migrate runs migrations for this database engine
-func (db *MySQLDatabase) Migrate() error {
-	sourceDriver, err := iofs.New(migrations, "migrations/mysql")
-	if err != nil {
+func (db *MySQLDatabase) Migrate(ctx context.Context) error {
+	if err := runMigrations(ctx, db, mysqlMigrations); err != nil {
 		return errors.WithStack(err)
-	}
-
-	dbDriver, err := mysql.WithInstance(db.DB.DB, &mysql.Config{})
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	migration, err := migrate.NewWithInstance(
-		"iofs",
-		sourceDriver,
-		"mysql",
-		dbDriver,
-	)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	if err := migration.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return err
 	}
 
 	return nil
 }
 
+// GetDatabaseSchemaVersion fetches the current migrations version of the database
+func (db *MySQLDatabase) GetDatabaseSchemaVersion(ctx context.Context) (string, error) {
+	var version string
+
+	err := db.GetContext(ctx, &version, "SELECT database_schema_version FROM shiori_system")
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	return version, nil
+}
+
+// SetDatabaseSchemaVersion sets the current migrations version of the database
+func (db *MySQLDatabase) SetDatabaseSchemaVersion(ctx context.Context, version string) error {
+	tx := db.MustBegin()
+	defer tx.Rollback()
+
+	_, err := tx.Exec("UPDATE shiori_system SET database_schema_version = ?", version)
+	if err != nil {
+		return errors.WithStack(err)
+	}
+
+	return tx.Commit()
+}
+
 // SaveBookmarks saves new or updated bookmarks to database.
 // Returns the saved ID and error message if any happened.
-func (db *MySQLDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks ...model.Bookmark) ([]model.Bookmark, error) {
-	var result []model.Bookmark
+func (db *MySQLDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks ...model.BookmarkDTO) ([]model.BookmarkDTO, error) {
+	var result []model.BookmarkDTO
 
 	if err := db.withTx(ctx, func(tx *sqlx.Tx) error {
 		// Prepare statement
 		stmtInsertBook, err := tx.Preparex(`INSERT INTO bookmark
-			(url, title, excerpt, author, public, content, html, modified)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?)`)
+			(url, title, excerpt, author, public, content, html, modified_at, created_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -87,7 +156,7 @@ func (db *MySQLDatabase) SaveBookmarks(ctx context.Context, create bool, bookmar
 			public   = ?,
 			content  = ?,
 			html     = ?,
-			modified = ?
+			modified_at = ?
 		WHERE id = ?`)
 		if err != nil {
 			return errors.WithStack(err)
@@ -131,17 +200,18 @@ func (db *MySQLDatabase) SaveBookmarks(ctx context.Context, create bool, bookmar
 			}
 
 			// Set modified time
-			if book.Modified == "" {
-				book.Modified = modifiedTime
+			if book.ModifiedAt == "" {
+				book.ModifiedAt = modifiedTime
 			}
 
 			// Save bookmark
 			var err error
 			if create {
+				book.CreatedAt = modifiedTime
 				var res sql.Result
 				res, err = stmtInsertBook.ExecContext(ctx,
 					book.URL, book.Title, book.Excerpt, book.Author,
-					book.Public, book.Content, book.HTML, book.Modified)
+					book.Public, book.Content, book.HTML, book.ModifiedAt, book.CreatedAt)
 				if err != nil {
 					return errors.WithStack(err)
 				}
@@ -153,7 +223,7 @@ func (db *MySQLDatabase) SaveBookmarks(ctx context.Context, create bool, bookmar
 			} else {
 				_, err = stmtUpdateBook.ExecContext(ctx,
 					book.URL, book.Title, book.Excerpt, book.Author,
-					book.Public, book.Content, book.HTML, book.Modified, book.ID)
+					book.Public, book.Content, book.HTML, book.ModifiedAt, book.ID)
 			}
 			if err != nil {
 				return errors.WithStack(err)
@@ -218,7 +288,7 @@ func (db *MySQLDatabase) SaveBookmarks(ctx context.Context, create bool, bookmar
 }
 
 // GetBookmarks fetch list of bookmarks based on submitted options.
-func (db *MySQLDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions) ([]model.Bookmark, error) {
+func (db *MySQLDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions) ([]model.BookmarkDTO, error) {
 	// Create initial query
 	columns := []string{
 		`id`,
@@ -227,7 +297,8 @@ func (db *MySQLDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOpti
 		`excerpt`,
 		`author`,
 		`public`,
-		`modified`,
+		`created_at`,
+		`modified_at`,
 		`content <> "" has_content`}
 
 	if opts.WithContent {
@@ -313,7 +384,7 @@ func (db *MySQLDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOpti
 	case ByLastAdded:
 		query += ` ORDER BY id DESC`
 	case ByLastModified:
-		query += ` ORDER BY modified DESC`
+		query += ` ORDER BY modified_at DESC`
 	default:
 		query += ` ORDER BY id`
 	}
@@ -330,7 +401,7 @@ func (db *MySQLDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOpti
 	}
 
 	// Fetch bookmarks
-	bookmarks := []model.Bookmark{}
+	bookmarks := []model.BookmarkDTO{}
 	err = db.Select(&bookmarks, query, args...)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, errors.WithStack(err)
@@ -500,13 +571,13 @@ func (db *MySQLDatabase) DeleteBookmarks(ctx context.Context, ids ...int) (err e
 	return nil
 }
 
-// GetBookmark fetchs bookmark based on its ID or URL.
+// GetBookmark fetches bookmark based on its ID or URL.
 // Returns the bookmark and boolean whether it's exist or not.
-func (db *MySQLDatabase) GetBookmark(ctx context.Context, id int, url string) (model.Bookmark, bool, error) {
+func (db *MySQLDatabase) GetBookmark(ctx context.Context, id int, url string) (model.BookmarkDTO, bool, error) {
 	args := []interface{}{id}
 	query := `SELECT
 		id, url, title, excerpt, author, public,
-		content, html, modified, content <> '' has_content
+		content, html, modified_at, created_at, content <> '' has_content
 		FROM bookmark WHERE id = ?`
 
 	if url != "" {
@@ -514,7 +585,7 @@ func (db *MySQLDatabase) GetBookmark(ctx context.Context, id int, url string) (m
 		args = append(args, url)
 	}
 
-	book := model.Bookmark{}
+	book := model.BookmarkDTO{}
 	if err := db.GetContext(ctx, &book, query, args...); err != nil && err != sql.ErrNoRows {
 		return book, false, errors.WithStack(err)
 	}
@@ -532,11 +603,22 @@ func (db *MySQLDatabase) SaveAccount(ctx context.Context, account model.Account)
 
 	// Insert account to database
 	_, err = db.ExecContext(ctx, `INSERT INTO account
-		(username, password, owner) VALUES (?, ?, ?)
+		(username, password, owner, config) VALUES (?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 		password = VALUES(password),
 		owner = VALUES(owner)`,
-		account.Username, hashedPassword, account.Owner)
+		account.Username, hashedPassword, account.Owner, account.Config)
+
+	return errors.WithStack(err)
+}
+
+// SaveAccountSettings update settings for specific account  in database. Returns error if any happened
+func (db *MySQLDatabase) SaveAccountSettings(ctx context.Context, account model.Account) (err error) {
+	// Update account config in database for specific user
+	_, err = db.ExecContext(ctx, `UPDATE account
+		SET config = ?
+		WHERE username = ?`,
+		account.Config, account.Username)
 
 	return errors.WithStack(err)
 }
@@ -545,7 +627,7 @@ func (db *MySQLDatabase) SaveAccount(ctx context.Context, account model.Account)
 func (db *MySQLDatabase) GetAccounts(ctx context.Context, opts GetAccountsOptions) ([]model.Account, error) {
 	// Create query
 	args := []interface{}{}
-	query := `SELECT id, username, owner FROM account WHERE 1`
+	query := `SELECT id, username, owner, config FROM account WHERE 1`
 
 	if opts.Keyword != "" {
 		query += " AND username LIKE ?"
@@ -573,7 +655,7 @@ func (db *MySQLDatabase) GetAccounts(ctx context.Context, opts GetAccountsOption
 func (db *MySQLDatabase) GetAccount(ctx context.Context, username string) (model.Account, bool, error) {
 	account := model.Account{}
 	if err := db.GetContext(ctx, &account, `SELECT
-		id, username, password, owner FROM account WHERE username = ?`,
+		id, username, password, owner, config FROM account WHERE username = ?`,
 		username,
 	); err != nil {
 		return account, false, errors.WithStack(err)

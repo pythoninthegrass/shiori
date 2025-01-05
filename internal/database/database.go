@@ -2,18 +2,15 @@ package database
 
 import (
 	"context"
-	"embed"
 	"fmt"
 	"log"
 	"net/url"
+	"strings"
 
 	"github.com/go-shiori/shiori/internal/model"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 )
-
-//go:embed migrations/*
-var migrations embed.FS
 
 // OrderMethod is the order method for getting bookmarks
 type OrderMethod int
@@ -54,7 +51,8 @@ func Connect(ctx context.Context, dbURL string) (DB, error) {
 
 	switch dbU.Scheme {
 	case "mysql":
-		return OpenMySQLDatabase(ctx, dbURL)
+		urlNoSchema := strings.Split(dbURL, "://")[1]
+		return OpenMySQLDatabase(ctx, urlNoSchema)
 	case "postgres":
 		return OpenPGDatabase(ctx, dbURL)
 	case "sqlite":
@@ -66,14 +64,26 @@ func Connect(ctx context.Context, dbURL string) (DB, error) {
 
 // DB is interface for accessing and manipulating data in database.
 type DB interface {
+	// DBx is the underlying sqlx.DB
+	DBx() *sqlx.DB
+
+	// Init initializes the database
+	Init(ctx context.Context) error
+
 	// Migrate runs migrations for this database
-	Migrate() error
+	Migrate(ctx context.Context) error
+
+	// GetDatabaseSchemaVersion gets the version of the database
+	GetDatabaseSchemaVersion(ctx context.Context) (string, error)
+
+	// SetDatabaseSchemaVersion sets the version of the database
+	SetDatabaseSchemaVersion(ctx context.Context, version string) error
 
 	// SaveBookmarks saves bookmarks data to database.
-	SaveBookmarks(ctx context.Context, create bool, bookmarks ...model.Bookmark) ([]model.Bookmark, error)
+	SaveBookmarks(ctx context.Context, create bool, bookmarks ...model.BookmarkDTO) ([]model.BookmarkDTO, error)
 
 	// GetBookmarks fetch list of bookmarks based on submitted options.
-	GetBookmarks(ctx context.Context, opts GetBookmarksOptions) ([]model.Bookmark, error)
+	GetBookmarks(ctx context.Context, opts GetBookmarksOptions) ([]model.BookmarkDTO, error)
 
 	// GetBookmarksCount get count of bookmarks in database.
 	GetBookmarksCount(ctx context.Context, opts GetBookmarksOptions) (int, error)
@@ -81,11 +91,14 @@ type DB interface {
 	// DeleteBookmarks removes all record with matching ids from database.
 	DeleteBookmarks(ctx context.Context, ids ...int) error
 
-	// GetBookmark fetchs bookmark based on its ID or URL.
-	GetBookmark(ctx context.Context, id int, url string) (model.Bookmark, bool, error)
+	// GetBookmark fetches bookmark based on its ID or URL.
+	GetBookmark(ctx context.Context, id int, url string) (model.BookmarkDTO, bool, error)
 
 	// SaveAccount saves new account in database
 	SaveAccount(ctx context.Context, a model.Account) error
+
+	// SaveAccountSettings saves settings for specific user in database
+	SaveAccountSettings(ctx context.Context, a model.Account) error
 
 	// GetAccounts fetch list of account (without its password) with matching keyword.
 	GetAccounts(ctx context.Context, opts GetAccountsOptions) ([]model.Account, error)
@@ -107,7 +120,7 @@ type DB interface {
 }
 
 type dbbase struct {
-	sqlx.DB
+	*sqlx.DB
 }
 
 func (db *dbbase) withTx(ctx context.Context, fn func(tx *sqlx.Tx) error) error {

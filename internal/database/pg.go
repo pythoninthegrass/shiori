@@ -8,13 +8,67 @@ import (
 	"time"
 
 	"github.com/go-shiori/shiori/internal/model"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/jmoiron/sqlx"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/lib/pq"
 )
+
+var postgresMigrations = []migration{
+	newFileMigration("0.0.0", "0.1.0", "postgres/0000_system"),
+	newFileMigration("0.1.0", "0.2.0", "postgres/0001_initial"),
+	newFuncMigration("0.2.0", "0.3.0", func(db *sql.DB) error {
+		// Ensure that bookmark table has `has_content` column and account table has `config` column
+		// for users upgrading from <1.5.4 directly into this version.
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+
+		_, err = tx.Exec(`ALTER TABLE bookmark ADD COLUMN has_content BOOLEAN DEFAULT FALSE NOT NULL`)
+		if err != nil {
+			// Check if this is a "column already exists" error (PostgreSQL error code 42701)
+			// If it's not, return error.
+			// This is needed for users upgrading from >1.5.4 directly into this version.
+			pqErr, ok := err.(*pq.Error)
+			if ok && pqErr.Code == "42701" {
+				tx.Rollback()
+			} else {
+				return fmt.Errorf("failed to add has_content column to bookmark table: %w", err)
+			}
+		} else {
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("failed to commit transaction: %w", err)
+			}
+		}
+
+		tx, err = db.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+
+		_, err = tx.Exec(`ALTER TABLE account ADD COLUMN config JSONB NOT NULL DEFAULT '{}'`)
+		if err != nil {
+			// Check if this is a "column already exists" error (PostgreSQL error code 42701)
+			// If it's not, return error
+			// This is needed for users upgrading from >1.5.4 directly into this version.
+			pqErr, ok := err.(*pq.Error)
+			if ok && pqErr.Code == "42701" {
+				tx.Rollback()
+			} else {
+				return fmt.Errorf("failed to add config column to account table: %w", err)
+			}
+		} else {
+			if err := tx.Commit(); err != nil {
+				return fmt.Errorf("failed to commit transaction: %w", err)
+			}
+		}
+
+		return nil
+	}),
+	newFileMigration("0.3.0", "0.4.0", "postgres/0002_created_time"),
+}
 
 // PGDatabase is implementation of Database interface
 // for connecting to PostgreSQL database.
@@ -33,48 +87,65 @@ func OpenPGDatabase(ctx context.Context, connString string) (pgDB *PGDatabase, e
 	db.SetMaxOpenConns(100)
 	db.SetConnMaxLifetime(time.Second)
 
-	pgDB = &PGDatabase{dbbase: dbbase{*db}}
+	pgDB = &PGDatabase{dbbase: dbbase{db}}
 	return pgDB, err
 }
 
+// DBX returns the underlying sqlx.DB object
+func (db *PGDatabase) DBx() *sqlx.DB {
+	return db.DB
+}
+
+// Init initializes the database
+func (db *PGDatabase) Init(ctx context.Context) error {
+	return nil
+}
+
 // Migrate runs migrations for this database engine
-func (db *PGDatabase) Migrate() error {
-	sourceDriver, err := iofs.New(migrations, "migrations/postgres")
-	if err != nil {
+func (db *PGDatabase) Migrate(ctx context.Context) error {
+	if err := runMigrations(ctx, db, postgresMigrations); err != nil {
 		return errors.WithStack(err)
-	}
-
-	dbDriver, err := postgres.WithInstance(db.DB.DB, &postgres.Config{})
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	migration, err := migrate.NewWithInstance(
-		"iofs",
-		sourceDriver,
-		"postgres",
-		dbDriver,
-	)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-
-	if err := migration.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return err
 	}
 
 	return nil
 }
 
+// GetDatabaseSchemaVersion fetches the current migrations version of the database
+func (db *PGDatabase) GetDatabaseSchemaVersion(ctx context.Context) (string, error) {
+	var version string
+
+	err := db.GetContext(ctx, &version, "SELECT database_schema_version FROM shiori_system")
+	if err != nil {
+		return "", errors.WithStack(err)
+	}
+
+	return version, nil
+}
+
+// SetDatabaseSchemaVersion sets the current migrations version of the database
+func (db *PGDatabase) SetDatabaseSchemaVersion(ctx context.Context, version string) error {
+	tx := db.MustBegin()
+	defer tx.Rollback()
+
+	return db.withTx(ctx, func(tx *sqlx.Tx) error {
+		_, err := tx.Exec("UPDATE shiori_system SET database_schema_version = $1", version)
+		if err != nil {
+			return errors.WithStack(err)
+		}
+
+		return tx.Commit()
+	})
+}
+
 // SaveBookmarks saves new or updated bookmarks to database.
 // Returns the saved ID and error message if any happened.
-func (db *PGDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks ...model.Bookmark) (result []model.Bookmark, err error) {
-	result = []model.Bookmark{}
+func (db *PGDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks ...model.BookmarkDTO) (result []model.BookmarkDTO, err error) {
+	result = []model.BookmarkDTO{}
 	if err := db.withTx(ctx, func(tx *sqlx.Tx) error {
 		// Prepare statement
 		stmtInsertBook, err := tx.Preparex(`INSERT INTO bookmark
-			(url, title, excerpt, author, public, content, html, modified)
-			VALUES($1, $2, $3, $4, $5, $6, $7, $8)
+			(url, title, excerpt, author, public, content, html, modified_at, created_at)
+			VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		RETURNING id`)
 		if err != nil {
 			return errors.WithStack(err)
@@ -88,7 +159,7 @@ func (db *PGDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks 
 			public   = $5,
 			content  = $6,
 			html     = $7,
-			modified = $8
+			modified_at = $8
 			WHERE id = $9`)
 		if err != nil {
 			return errors.WithStack(err)
@@ -120,7 +191,7 @@ func (db *PGDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks 
 		modifiedTime := time.Now().UTC().Format(model.DatabaseDateFormat)
 
 		// Execute statements
-		result = []model.Bookmark{}
+		result = []model.BookmarkDTO{}
 		for _, book := range bookmarks {
 			// URL and title
 			if book.URL == "" {
@@ -132,20 +203,21 @@ func (db *PGDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks 
 			}
 
 			// Set modified time
-			if book.Modified == "" {
-				book.Modified = modifiedTime
+			if book.ModifiedAt == "" {
+				book.ModifiedAt = modifiedTime
 			}
 
 			// Save bookmark
 			var err error
 			if create {
+				book.CreatedAt = modifiedTime
 				err = stmtInsertBook.QueryRowContext(ctx,
 					book.URL, book.Title, book.Excerpt, book.Author,
-					book.Public, book.Content, book.HTML, book.Modified).Scan(&book.ID)
+					book.Public, book.Content, book.HTML, book.ModifiedAt, book.CreatedAt).Scan(&book.ID)
 			} else {
 				_, err = stmtUpdateBook.ExecContext(ctx,
 					book.URL, book.Title, book.Excerpt, book.Author,
-					book.Public, book.Content, book.HTML, book.Modified, book.ID)
+					book.Public, book.Content, book.HTML, book.ModifiedAt, book.ID)
 			}
 			if err != nil {
 				return errors.WithStack(err)
@@ -206,7 +278,7 @@ func (db *PGDatabase) SaveBookmarks(ctx context.Context, create bool, bookmarks 
 }
 
 // GetBookmarks fetch list of bookmarks based on submitted options.
-func (db *PGDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions) ([]model.Bookmark, error) {
+func (db *PGDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions) ([]model.BookmarkDTO, error) {
 	// Create initial query
 	columns := []string{
 		`id`,
@@ -215,7 +287,8 @@ func (db *PGDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions
 		`excerpt`,
 		`author`,
 		`public`,
-		`modified`,
+		`created_at`,
+		`modified_at`,
 		`content <> '' has_content`}
 
 	if opts.WithContent {
@@ -237,13 +310,12 @@ func (db *PGDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions
 	// Add where clause for search keyword
 	if opts.Keyword != "" {
 		query += ` AND (
-			url LIKE :lkw OR
-			title LIKE :kw OR
-			excerpt LIKE :kw OR
-			content LIKE :kw
+			url LIKE '%' || :kw || '%' OR
+			title LIKE '%' || :kw || '%' OR
+			excerpt LIKE '%' || :kw || '%' OR
+			content LIKE '%' || :kw || '%'
 		)`
 
-		arg["lkw"] = "%" + opts.Keyword + "%"
 		arg["kw"] = opts.Keyword
 	}
 
@@ -305,7 +377,7 @@ func (db *PGDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions
 	case ByLastAdded:
 		query += ` ORDER BY id DESC`
 	case ByLastModified:
-		query += ` ORDER BY modified DESC`
+		query += ` ORDER BY modified_at DESC`
 	default:
 		query += ` ORDER BY id`
 	}
@@ -326,7 +398,7 @@ func (db *PGDatabase) GetBookmarks(ctx context.Context, opts GetBookmarksOptions
 	query = db.Rebind(query)
 
 	// Fetch bookmarks
-	bookmarks := []model.Bookmark{}
+	bookmarks := []model.BookmarkDTO{}
 	err = db.SelectContext(ctx, &bookmarks, query, args...)
 	if err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("failed to fetch data: %v", err)
@@ -372,10 +444,10 @@ func (db *PGDatabase) GetBookmarksCount(ctx context.Context, opts GetBookmarksOp
 	// Add where clause for search keyword
 	if opts.Keyword != "" {
 		query += ` AND (
-			url LIKE :lurl OR
-			title LIKE :kw OR
-			excerpt LIKE :kw OR
-			content LIKE :kw
+			url LIKE '%' || :kw || '%' OR
+			title LIKE '%' || :kw || '%' OR
+			excerpt LIKE '%' || :kw || '%' OR
+			content LIKE '%' || :kw || '%'
 		)`
 
 		arg["lurl"] = "%" + opts.Keyword + "%"
@@ -510,13 +582,13 @@ func (db *PGDatabase) DeleteBookmarks(ctx context.Context, ids ...int) (err erro
 	return nil
 }
 
-// GetBookmark fetchs bookmark based on its ID or URL.
+// GetBookmark fetches bookmark based on its ID or URL.
 // Returns the bookmark and boolean whether it's exist or not.
-func (db *PGDatabase) GetBookmark(ctx context.Context, id int, url string) (model.Bookmark, bool, error) {
+func (db *PGDatabase) GetBookmark(ctx context.Context, id int, url string) (model.BookmarkDTO, bool, error) {
 	args := []interface{}{id}
 	query := `SELECT
 		id, url, title, excerpt, author, public,
-		content, html, modified, content <> '' has_content
+		content, html, modified_at, created_at, content <> '' has_content
 		FROM bookmark WHERE id = $1`
 
 	if url != "" {
@@ -524,7 +596,7 @@ func (db *PGDatabase) GetBookmark(ctx context.Context, id int, url string) (mode
 		args = append(args, url)
 	}
 
-	book := model.Bookmark{}
+	book := model.BookmarkDTO{}
 	if err := db.GetContext(ctx, &book, query, args...); err != nil && err != sql.ErrNoRows {
 		return book, false, errors.WithStack(err)
 	}
@@ -542,11 +614,23 @@ func (db *PGDatabase) SaveAccount(ctx context.Context, account model.Account) (e
 
 	// Insert account to database
 	_, err = db.ExecContext(ctx, `INSERT INTO account
-		(username, password, owner) VALUES ($1, $2, $3)
+		(username, password, owner, config) VALUES ($1, $2, $3, $4)
 		ON CONFLICT(username) DO UPDATE SET
 		password = $2,
 		owner = $3`,
-		account.Username, hashedPassword, account.Owner)
+		account.Username, hashedPassword, account.Owner, account.Config)
+
+	return errors.WithStack(err)
+}
+
+// SaveAccountSettings update settings for specific account  in database. Returns error if any happened
+func (db *PGDatabase) SaveAccountSettings(ctx context.Context, account model.Account) (err error) {
+
+	// Insert account to database
+	_, err = db.ExecContext(ctx, `UPDATE account
+   		SET config = $1
+   		WHERE username = $2`,
+		account.Config, account.Username)
 
 	return errors.WithStack(err)
 }
@@ -555,7 +639,7 @@ func (db *PGDatabase) SaveAccount(ctx context.Context, account model.Account) (e
 func (db *PGDatabase) GetAccounts(ctx context.Context, opts GetAccountsOptions) ([]model.Account, error) {
 	// Create query
 	args := []interface{}{}
-	query := `SELECT id, username, owner FROM account WHERE TRUE`
+	query := `SELECT id, username, owner, config FROM account WHERE TRUE`
 
 	if opts.Keyword != "" {
 		query += " AND username LIKE $1"
@@ -583,7 +667,7 @@ func (db *PGDatabase) GetAccounts(ctx context.Context, opts GetAccountsOptions) 
 func (db *PGDatabase) GetAccount(ctx context.Context, username string) (model.Account, bool, error) {
 	account := model.Account{}
 	if err := db.GetContext(ctx, &account, `SELECT
-		id, username, password, owner FROM account WHERE username = $1`,
+		id, username, password, owner, config FROM account WHERE username = $1`,
 		username,
 	); err != nil {
 		return account, false, errors.WithStack(err)

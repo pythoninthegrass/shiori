@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-shiori/shiori/internal/http/response"
 	"github.com/go-shiori/shiori/internal/model"
 	"github.com/go-shiori/shiori/internal/testutil"
 	"github.com/sirupsen/logrus"
@@ -18,8 +19,13 @@ func TestAuthenticationRequiredMiddleware(t *testing.T) {
 	t.Run("test unauthorized", func(t *testing.T) {
 		g := testutil.NewGin()
 		g.Use(AuthenticationRequired())
+		g.Handle("GET", "/", func(c *gin.Context) {
+			response.Send(c, http.StatusOK, nil)
+		})
 		w := testutil.PerformRequest(g, "GET", "/")
 		require.Equal(t, http.StatusUnauthorized, w.Code)
+		// This ensures we are aborting the request and not sending more data
+		require.Equal(t, `{"ok":false,"message":null}`, w.Body.String())
 	})
 
 	t.Run("test authorized", func(t *testing.T) {
@@ -43,7 +49,7 @@ func TestAuthMiddleware(t *testing.T) {
 	_, deps := testutil.GetTestConfigurationAndDependencies(t, ctx, logger)
 	middleware := AuthMiddleware(deps)
 
-	t.Run("test no authorization header", func(t *testing.T) {
+	t.Run("test no authorization method", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, router := gin.CreateTestContext(w)
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -55,13 +61,30 @@ func TestAuthMiddleware(t *testing.T) {
 	})
 
 	t.Run("test authorization header", func(t *testing.T) {
-		account := model.Account{Username: "shiori"}
-		token, err := deps.Domains.Auth.CreateTokenForAccount(&account, time.Now().Add(time.Minute))
+		account := testutil.GetValidAccount()
+		token, err := deps.Domains.Auth.CreateTokenForAccount(account, time.Now().Add(time.Minute))
 		require.NoError(t, err)
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request, _ = http.NewRequest("GET", "/", nil)
 		c.Request.Header.Set(model.AuthorizationHeader, model.AuthorizationTokenType+" "+token)
+		middleware(c)
+		_, exists := c.Get(model.ContextAccountKey)
+		require.True(t, exists)
+	})
+
+	t.Run("test authorization cookie", func(t *testing.T) {
+		account := testutil.GetValidAccount()
+		token, err := deps.Domains.Auth.CreateTokenForAccount(account, time.Now().Add(time.Minute))
+		require.NoError(t, err)
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request, _ = http.NewRequest("GET", "/", nil)
+		c.Request.AddCookie(&http.Cookie{
+			Name:   "token",
+			Value:  token,
+			MaxAge: int(time.Now().Add(time.Minute).Unix()),
+		})
 		middleware(c)
 		_, exists := c.Get(model.ContextAccountKey)
 		require.True(t, exists)

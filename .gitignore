@@ -1,5 +1,8 @@
-# Exclude config file
+# Exclude IDE
 .vscode/
+.idea/
+
+# Exclude config file
 *.toml
 
 # Exclude executable file
@@ -9,10 +12,23 @@
 /dev-data*
 
 # Coverage data
-/coverage.out
+/coverage.*
 
 # Dist files
 dist/
 
 # macOS trash files
 .DS_Store
+
+# frontend
+node_modules
+
+# golang
+go.work*
+
+# workaround for buildx using podman
+type=docker
+
+# Docs
+docs/.venv
+build/docs

@@ -52,7 +52,7 @@ func importHandler(cmd *cobra.Command, args []string) {
 	defer srcFile.Close()
 
 	// Parse bookmark's file
-	bookmarks := []model.Bookmark{}
+	bookmarks := []model.BookmarkDTO{}
 	mapURL := make(map[string]struct{})
 
 	doc, err := goquery.NewDocumentFromReader(srcFile)
@@ -135,11 +135,11 @@ func importHandler(cmd *cobra.Command, args []string) {
 		}
 
 		// Add item to list
-		bookmark := model.Bookmark{
-			URL:      url,
-			Title:    title,
-			Tags:     tags,
-			Modified: modifiedDate.Format(model.DatabaseDateFormat),
+		bookmark := model.BookmarkDTO{
+			URL:        url,
+			Title:      title,
+			Tags:       tags,
+			ModifiedAt: modifiedDate.Format(model.DatabaseDateFormat),
 		}
 
 		mapURL[url] = struct{}{}
